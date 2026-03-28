@@ -29,8 +29,8 @@ export async function getOrganizations(): Promise<Organization[]> {
 }
 
 export async function createOrganization(name: string, rootDomain: string): Promise<Organization> {
-  const { data } = await api.post<Organization>('/api/organizations', { name, rootDomain });
-  return data;
+  const { data } = await api.post<{ organization: Organization }>('/api/organizations', { name, rootDomain });
+  return data.organization;
 }
 
 export async function deleteOrganization(id: string): Promise<void> {
