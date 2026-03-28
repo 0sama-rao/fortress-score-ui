@@ -31,26 +31,26 @@ export interface Scan {
   status: ScanStatus;
   fortressScore: number | null;
   tlsScore: number | null;
-  headersScore: number | null;   // backend field name
+  headersScore: number | null;
   networkScore: number | null;
   emailScore: number | null;
   startedAt: string;
   completedAt: string | null;
 }
 
-export interface ScanSignal {
-  check: string;
-  riskValue: number;
-  passed: boolean;
-}
+export type ScanCategory = 'TLS' | 'HEADERS' | 'NETWORK' | 'EMAIL';
+
+// Signals are category-specific objects from the backend scanners
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type SignalData = Record<string, boolean | number | number[] | string | any>;
 
 export interface ScanResult {
   id: string;
   assetId: string;
-  assetValue: string;            // e.g. "vpn.github.com"
-  category: 'TLS' | 'HEADERS' | 'NETWORK' | 'EMAIL';
+  assetValue: string;
+  category: ScanCategory;
   riskScore: number;
-  signals: ScanSignal[];
+  signals: SignalData;
   scannedAt: string;
 }
 
@@ -83,7 +83,7 @@ export type AssetType = 'DOMAIN' | 'SUBDOMAIN' | 'IP';
 export interface Asset {
   id: string;
   type: AssetType;
-  value: string;                 // e.g. "vpn.github.com" or "52.21.1.1"
+  value: string;
   discoveredAt: string;
 }
 
@@ -99,7 +99,7 @@ export function validateDomain(input: string): string | null {
 
   if (!cleaned) return 'Domain is required';
   if (!DOMAIN_RE.test(cleaned)) return 'Enter a valid domain (e.g. github.com)';
-  return null; // valid
+  return null;
 }
 
 export function cleanDomain(input: string): string {

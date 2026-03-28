@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, RefreshCw, Shield } from 'lucide-react';
-import { getOrganizations, triggerScan } from '../lib/services';
-import type { Organization } from '../lib/types';
+import { Play, RefreshCw, Shield, History } from 'lucide-react';
+import { getOrganizations, triggerScan, getOrgScans } from '../lib/services';
+import type { Organization, Scan } from '../lib/types';
+import { getScoreColor } from '../lib/types';
 import { useToast } from '../context/ToastContext';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 import { SkeletonCard } from '../components/ui/Skeleton';
+import { ScoreHero } from '../components/ui/ScoreBadge';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -14,7 +16,10 @@ export default function Dashboard() {
 
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
+  const [latestScan, setLatestScan] = useState<Scan | null>(null);
+  const [recentScans, setRecentScans] = useState<Scan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isScoreLoading, setIsScoreLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
@@ -27,6 +32,23 @@ export default function Dashboard() {
       .finally(() => setIsLoading(false));
   }, []);
 
+  // Fetch latest completed scan when org changes
+  useEffect(() => {
+    if (!selectedOrg) return;
+    setLatestScan(null);
+    setRecentScans([]);
+    setIsScoreLoading(true);
+
+    getOrgScans(selectedOrg.id)
+      .then((scans) => {
+        setRecentScans(scans.slice(0, 5));
+        const completed = scans.find((s) => s.status === 'COMPLETE' && s.fortressScore !== null);
+        setLatestScan(completed ?? null);
+      })
+      .catch(() => { /* no scans yet */ })
+      .finally(() => setIsScoreLoading(false));
+  }, [selectedOrg]);
+
   async function handleScan() {
     if (!selectedOrg) return;
     setIsScanning(true);
@@ -35,7 +57,6 @@ export default function Dashboard() {
       toast.info('Scan started — discovering assets…');
       navigate(`/scans/${scan.id}`);
     } catch (err: unknown) {
-      // 409 = scan already running — redirect to that scan
       if (
         err && typeof err === 'object' && 'response' in err &&
         (err as { response: { status: number; data: { scanId?: string } } }).response?.status === 409
@@ -109,52 +130,197 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Scores not available yet (Phase 2 — no score endpoint yet) */}
-      <div
-        className="rounded-xl p-8"
-        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-      >
-        <div className="text-center py-8">
-          <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl mb-4"
-            style={{ backgroundColor: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
-            <Shield className="h-7 w-7" style={{ color: 'var(--color-primary)' }} />
-          </div>
-          <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
-            Run your first scan
-          </h2>
-          <p className="text-sm mb-6 max-w-sm mx-auto" style={{ color: 'var(--color-text-secondary)' }}>
-            Scan {selectedOrg?.rootDomain} to discover its public infrastructure and calculate a Fortress Score.
-          </p>
-          <Button onClick={handleScan} isLoading={isScanning}>
-            <Play className="h-4 w-4 mr-1.5" />
-            Run Scan
-          </Button>
+      {isScoreLoading ? (
+        <div className="grid grid-cols-2 gap-4">
+          <SkeletonCard />
+          <SkeletonCard />
         </div>
+      ) : latestScan ? (
+        <>
+          {/* Fortress Score Hero + Category Breakdown */}
+          <div
+            className="rounded-xl p-8"
+            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+          >
+            <div className="flex items-center gap-10">
+              {/* Score hero */}
+              <ScoreHero score={latestScan.fortressScore!} />
 
-        {/* Score scale reference */}
-        <div
-          className="mt-8 pt-6 grid grid-cols-5 gap-2 text-center text-xs"
-          style={{ borderTop: '1px solid var(--color-border)' }}
-        >
-          {[
-            { range: '0–20',   label: 'Excellent', color: '#22c55e' },
-            { range: '21–40',  label: 'Good',      color: '#14b8a6' },
-            { range: '41–60',  label: 'Moderate',  color: '#eab308' },
-            { range: '61–80',  label: 'High Risk',  color: '#f97316' },
-            { range: '81–100', label: 'Critical',  color: '#ef4444' },
-          ].map(({ range, label, color }) => (
-            <div key={label}>
-              <div className="h-1 rounded-full mb-2" style={{ backgroundColor: color }} />
-              <div className="font-medium" style={{ color }}>{range}</div>
-              <div style={{ color: 'var(--color-text-muted)' }}>{label}</div>
+              {/* 4 category cards */}
+              <div className="flex-1 grid grid-cols-2 gap-3">
+                {([
+                  ['TLS Security',     latestScan.tlsScore,      '30%'],
+                  ['HTTP Headers',     latestScan.headersScore,   '30%'],
+                  ['Network Exposure', latestScan.networkScore,  '20%'],
+                  ['Email Security',   latestScan.emailScore,    '20%'],
+                ] as [string, number | null, string][]).map(([label, val, weight]) => (
+                  <div
+                    key={label}
+                    className="rounded-lg px-4 py-3"
+                    style={{ backgroundColor: 'var(--color-background)' }}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
+                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{weight}</span>
+                    </div>
+                    {val !== null ? (
+                      <>
+                        <div className="text-xl font-bold" style={{ color: getScoreColor(val) }}>{val}</div>
+                        <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-border)' }}>
+                          <div className="h-full rounded-full" style={{ width: `${val}%`, backgroundColor: getScoreColor(val) }} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>—</div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+
+            {/* Last scanned */}
+            {latestScan.completedAt && (
+              <p className="text-xs mt-6 flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
+                <RefreshCw className="h-3 w-3" />
+                Last scanned {new Date(latestScan.completedAt).toLocaleString()}
+                <span className="mx-1">·</span>
+                <button
+                  onClick={() => navigate(`/scans/${latestScan.id}`)}
+                  className="cursor-pointer underline transition-colors"
+                  style={{ color: 'var(--color-primary)' }}
+                >
+                  View full results
+                </button>
+              </p>
+            )}
+          </div>
+
+          {/* Score Scale */}
+          <div
+            className="rounded-xl px-6 py-4"
+            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+          >
+            <div className="grid grid-cols-5 gap-2 text-center text-xs">
+              {[
+                { range: '0–20',   label: 'Excellent', color: '#22c55e' },
+                { range: '21–40',  label: 'Good',      color: '#14b8a6' },
+                { range: '41–60',  label: 'Moderate',  color: '#eab308' },
+                { range: '61–80',  label: 'High Risk', color: '#f97316' },
+                { range: '81–100', label: 'Critical',  color: '#ef4444' },
+              ].map(({ range, label, color }) => (
+                <div key={label}>
+                  <div className="h-1 rounded-full mb-2" style={{ backgroundColor: color }} />
+                  <div className="font-medium" style={{ color }}>{range}</div>
+                  <div style={{ color: 'var(--color-text-muted)' }}>{label}</div>
+                </div>
+              ))}
+            </div>
+            <p className="text-center text-xs mt-3" style={{ color: 'var(--color-text-muted)' }}>
+              Lower score = stronger security posture
+            </p>
+          </div>
+
+          {/* Recent Scans */}
+          {recentScans.length > 1 && (
+            <div
+              className="rounded-xl overflow-hidden"
+              style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+            >
+              <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <div className="flex items-center gap-2">
+                  <History className="h-3.5 w-3.5" style={{ color: 'var(--color-text-muted)' }} />
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-secondary)' }}>
+                    Recent Scans
+                  </span>
+                </div>
+              </div>
+              {recentScans.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between px-5 py-3 cursor-pointer transition-colors"
+                  style={{ borderBottom: '1px solid var(--color-border-subtle)' }}
+                  onClick={() => navigate(`/scans/${s.id}`)}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-surface-2)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '')}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{
+                        backgroundColor:
+                          s.status === 'COMPLETE' ? 'var(--color-success)' :
+                          s.status === 'FAILED' ? 'var(--color-danger)' :
+                          'var(--color-accent)',
+                      }}
+                    />
+                    <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      {new Date(s.startedAt).toLocaleString()}
+                    </span>
+                    <span
+                      className="text-xs px-2 py-0.5 rounded"
+                      style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-muted)' }}
+                    >
+                      {s.status}
+                    </span>
+                  </div>
+                  {s.fortressScore !== null && (
+                    <span className="text-sm font-bold" style={{ color: getScoreColor(s.fortressScore) }}>
+                      {s.fortressScore}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        /* No completed scans yet */
+        <div
+          className="rounded-xl p-8"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <div className="text-center py-8">
+            <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl mb-4"
+              style={{ backgroundColor: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
+              <Shield className="h-7 w-7" style={{ color: 'var(--color-primary)' }} />
+            </div>
+            <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
+              Run your first scan
+            </h2>
+            <p className="text-sm mb-6 max-w-sm mx-auto" style={{ color: 'var(--color-text-secondary)' }}>
+              Scan {selectedOrg?.rootDomain} to discover its public infrastructure and calculate a Fortress Score.
+            </p>
+            <Button onClick={handleScan} isLoading={isScanning}>
+              <Play className="h-4 w-4 mr-1.5" />
+              Run Scan
+            </Button>
+          </div>
+
+          {/* Score scale reference */}
+          <div
+            className="mt-8 pt-6 grid grid-cols-5 gap-2 text-center text-xs"
+            style={{ borderTop: '1px solid var(--color-border)' }}
+          >
+            {[
+              { range: '0–20',   label: 'Excellent', color: '#22c55e' },
+              { range: '21–40',  label: 'Good',      color: '#14b8a6' },
+              { range: '41–60',  label: 'Moderate',  color: '#eab308' },
+              { range: '61–80',  label: 'High Risk', color: '#f97316' },
+              { range: '81–100', label: 'Critical',  color: '#ef4444' },
+            ].map(({ range, label, color }) => (
+              <div key={label}>
+                <div className="h-1 rounded-full mb-2" style={{ backgroundColor: color }} />
+                <div className="font-medium" style={{ color }}>{range}</div>
+                <div style={{ color: 'var(--color-text-muted)' }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-center text-xs mt-3" style={{ color: 'var(--color-text-muted)' }}>
+            <RefreshCw className="inline h-3 w-3 mr-1" />
+            Lower score = stronger security posture
+          </p>
         </div>
-        <p className="text-center text-xs mt-3" style={{ color: 'var(--color-text-muted)' }}>
-          <RefreshCw className="inline h-3 w-3 mr-1" />
-          Lower score = stronger security posture
-        </p>
-      </div>
+      )}
     </div>
   );
 }
