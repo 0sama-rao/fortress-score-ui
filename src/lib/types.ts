@@ -27,10 +27,11 @@ export type ScanStatus = 'PENDING' | 'RUNNING' | 'COMPLETE' | 'FAILED';
 
 export interface Scan {
   id: string;
+  organizationId: string;
   status: ScanStatus;
   fortressScore: number | null;
   tlsScore: number | null;
-  headerScore: number | null;
+  headersScore: number | null;   // backend field name
   networkScore: number | null;
   emailScore: number | null;
   startedAt: string;
@@ -45,26 +46,28 @@ export interface ScanSignal {
 
 export interface ScanResult {
   id: string;
+  assetId: string;
+  assetValue: string;            // e.g. "vpn.github.com"
   category: 'TLS' | 'HEADERS' | 'NETWORK' | 'EMAIL';
   riskScore: number;
-  asset: {
-    hostname: string;
-    type: string;
-  };
   signals: ScanSignal[];
+  scannedAt: string;
 }
 
 // ── Score ──
 
 export interface OrgScore {
+  organizationId: string;
   fortressScore: number;
-  label: string;
-  tlsScore: number;
-  headerScore: number;
-  networkScore: number;
-  emailScore: number;
+  breakdown: {
+    tls:     { score: number; weight: number };
+    headers: { score: number; weight: number };
+    network: { score: number; weight: number };
+    email:   { score: number; weight: number };
+  };
   correlationBonus: number;
-  lastScannedAt: string | null;
+  scanId: string;
+  scannedAt: string;
 }
 
 export interface ScoreHistoryEntry {
@@ -75,14 +78,35 @@ export interface ScoreHistoryEntry {
 
 // ── Assets ──
 
-export type AssetType = 'SUBDOMAIN' | 'IP' | 'ROOT_DOMAIN';
+export type AssetType = 'DOMAIN' | 'SUBDOMAIN' | 'IP';
 
 export interface Asset {
   id: string;
-  hostname?: string;
-  ipAddress?: string;
   type: AssetType;
+  value: string;                 // e.g. "vpn.github.com" or "52.21.1.1"
   discoveredAt: string;
+}
+
+// ── Domain validation ──
+
+const DOMAIN_RE = /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+
+export function validateDomain(input: string): string | null {
+  const cleaned = input.trim().toLowerCase()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .replace(/:.*$/, '');
+
+  if (!cleaned) return 'Domain is required';
+  if (!DOMAIN_RE.test(cleaned)) return 'Enter a valid domain (e.g. github.com)';
+  return null; // valid
+}
+
+export function cleanDomain(input: string): string {
+  return input.trim().toLowerCase()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .replace(/:.*$/, '');
 }
 
 // ── Score utilities ──

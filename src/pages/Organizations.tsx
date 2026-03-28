@@ -1,63 +1,106 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, ExternalLink, Building2 } from 'lucide-react';
 import { getOrganizations, createOrganization, deleteOrganization } from '../lib/services';
 import type { Organization } from '../lib/types';
+import { validateDomain, cleanDomain } from '../lib/types';
+import { useToast } from '../context/ToastContext';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import Alert from '../components/ui/Alert';
+import Modal from '../components/ui/Modal';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonRow } from '../components/ui/Skeleton';
 
 export default function Organizations() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+
+  // Form state
   const [name, setName] = useState('');
   const [rootDomain, setRootDomain] = useState('');
+  const [domainError, setDomainError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadOrgs();
-  }, []);
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<Organization | null>(null);
+
+  useEffect(() => { loadOrgs(); }, []);
 
   async function loadOrgs() {
     setIsLoading(true);
     try {
-      const data = await getOrganizations();
-      setOrgs(data);
+      setOrgs(await getOrganizations());
     } catch {
-      //
+      toast.error('Failed to load organizations');
     } finally {
       setIsLoading(false);
     }
   }
 
+  // Real-time domain validation as user types
+  function handleDomainChange(value: string) {
+    setRootDomain(value);
+    if (value.trim()) {
+      const err = validateDomain(value);
+      setDomainError(err ?? '');
+    } else {
+      setDomainError('');
+    }
+  }
+
+  // Auto-clean domain on paste (strips https://, paths)
+  function handleDomainPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text');
+    const cleaned = cleanDomain(pasted);
+    setRootDomain(cleaned);
+    const err = validateDomain(cleaned);
+    setDomainError(err ?? '');
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
+    const err = validateDomain(rootDomain);
+    if (err) { setDomainError(err); return; }
+
     setIsSaving(true);
     try {
-      const org = await createOrganization(name, rootDomain);
+      const org = await createOrganization(name.trim(), cleanDomain(rootDomain));
       setOrgs((prev) => [...prev, org]);
       setShowModal(false);
       setName('');
       setRootDomain('');
+      setDomainError('');
+      toast.success(`${org.name} added successfully`);
     } catch {
-      setError('Failed to create organization. Please try again.');
+      toast.error('Failed to create organization');
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function handleDelete(id: string) {
+  function closeModal() {
+    setShowModal(false);
+    setName('');
+    setRootDomain('');
+    setDomainError('');
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
     try {
-      await deleteOrganization(id);
-      setOrgs((prev) => prev.filter((o) => o.id !== id));
-      setDeleteConfirm(null);
+      await deleteOrganization(deleteTarget.id);
+      setOrgs((prev) => prev.filter((o) => o.id !== deleteTarget.id));
+      toast.success(`${deleteTarget.name} deleted`);
     } catch {
-      //
+      toast.error('Failed to delete organization');
+    } finally {
+      setDeleteTarget(null);
     }
   }
 
@@ -65,7 +108,9 @@ export default function Organizations() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text">Organizations</h1>
+        <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>
+          Organizations
+        </h1>
         <Button onClick={() => setShowModal(true)}>
           <Plus className="h-4 w-4 mr-1.5" />
           Add Organization
@@ -74,53 +119,64 @@ export default function Organizations() {
 
       {/* List */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+          {[...Array(3)].map((_, i) => <SkeletonRow key={i} />)}
         </div>
       ) : orgs.length === 0 ? (
-        <div className="bg-surface rounded-xl border border-border p-12 text-center">
-          <p className="text-text-secondary mb-4">No organizations added yet.</p>
-          <Button onClick={() => setShowModal(true)}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Add Your First Organization
-          </Button>
+        <div className="rounded-xl" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+          <EmptyState
+            icon={Building2}
+            title="No organizations yet"
+            description="Add a company domain to start scanning its public infrastructure."
+            action={{ label: 'Add Organization', onClick: () => setShowModal(true) }}
+          />
         </div>
       ) : (
-        <div className="bg-surface rounded-xl border border-border divide-y divide-border">
-          {orgs.map((org) => (
-            <div key={org.id} className="flex items-center justify-between px-6 py-4">
+        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+          {orgs.map((org, i) => (
+            <div
+              key={org.id}
+              className="flex items-center justify-between px-6 py-4 transition-colors"
+              style={{
+                borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-surface-2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '')}
+            >
+              {/* Org info */}
               <div
                 className="flex-1 cursor-pointer"
                 onClick={() => navigate(`/organizations/${org.id}/assets`)}
               >
-                <div className="font-medium text-text">{org.name}</div>
-                <div className="text-sm text-text-secondary flex items-center gap-1 mt-0.5">
+                <div className="font-medium text-sm" style={{ color: 'var(--color-text)' }}>
+                  {org.name}
+                </div>
+                <div className="flex items-center gap-1 mt-0.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                   <ExternalLink className="h-3 w-3" />
                   {org.rootDomain}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-secondary">
+
+              {/* Meta + actions */}
+              <div className="flex items-center gap-3">
+                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                   Added {new Date(org.createdAt).toLocaleDateString()}
                 </span>
-                {deleteConfirm === org.id ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-danger">Delete?</span>
-                    <Button variant="danger" className="px-3 py-1.5 text-xs" onClick={() => handleDelete(org.id)}>
-                      Yes
-                    </Button>
-                    <Button variant="secondary" className="px-3 py-1.5 text-xs" onClick={() => setDeleteConfirm(null)}>
-                      No
-                    </Button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setDeleteConfirm(org.id)}
-                    className="p-2 text-text-secondary hover:text-danger transition-colors cursor-pointer rounded-md hover:bg-danger-light"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
+                <button
+                  onClick={() => setDeleteTarget(org)}
+                  className="p-1.5 rounded-md cursor-pointer transition-colors"
+                  style={{ color: 'var(--color-text-muted)' }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = 'var(--color-danger)';
+                    e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = 'var(--color-text-muted)';
+                    e.currentTarget.style.backgroundColor = '';
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             </div>
           ))}
@@ -128,45 +184,52 @@ export default function Organizations() {
       )}
 
       {/* Add Org Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-          <div className="bg-surface rounded-xl p-6 w-full max-w-md" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
-            <h2 className="text-lg font-semibold text-text mb-5">Add Organization</h2>
-            {error && <Alert variant="error" className="mb-4">{error}</Alert>}
-            <form onSubmit={handleCreate} className="space-y-4">
-              <Input
-                id="org-name"
-                label="Organization Name"
-                placeholder="Acme Corp"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-              <Input
-                id="root-domain"
-                label="Root Domain"
-                placeholder="acme.com"
-                value={rootDomain}
-                onChange={(e) => setRootDomain(e.target.value)}
-                required
-              />
-              <div className="flex gap-3 pt-1">
-                <Button type="submit" isLoading={isSaving} className="flex-1">
-                  Add Organization
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => { setShowModal(false); setError(''); }}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
+      <Modal open={showModal} onClose={closeModal} title="Add Organization">
+        <form onSubmit={handleCreate} className="space-y-4">
+          <Input
+            id="org-name"
+            label="Organization Name"
+            placeholder="Acme Corp"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+          <Input
+            id="root-domain"
+            label="Root Domain"
+            placeholder="acme.com"
+            value={rootDomain}
+            onChange={(e) => handleDomainChange(e.target.value)}
+            onPaste={handleDomainPaste}
+            error={domainError}
+            required
+          />
+          {!domainError && rootDomain && (
+            <p className="text-xs -mt-2" style={{ color: 'var(--color-text-muted)' }}>
+              Tip: paste a full URL — we'll clean it automatically
+            </p>
+          )}
+          <div className="flex gap-3 pt-1">
+            <Button type="submit" isLoading={isSaving} disabled={!!domainError} className="flex-1">
+              Add Organization
+            </Button>
+            <Button type="button" variant="secondary" onClick={closeModal} className="flex-1">
+              Cancel
+            </Button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
+
+      {/* Delete Confirm */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Organization"
+        description={`This will permanently delete "${deleteTarget?.name}" and all its scan data. This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
