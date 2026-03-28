@@ -7,21 +7,41 @@ export default function Layout() {
   const { user, logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background)' }}>
       <Sidebar />
 
-      {/* Main area */}
-      <div className="ml-64 flex flex-col min-h-screen">
+      <div style={{ marginLeft: '240px' }} className="flex flex-col min-h-screen">
         {/* Top header */}
-        <header className="h-14 bg-surface flex items-center justify-end px-6 shrink-0 border-b border-border">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-text">{user?.name}</span>
-            <span className="text-sm text-text-secondary">{user?.email}</span>
+        <header
+          className="h-14 flex items-center justify-end px-6 shrink-0"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            borderBottom: '1px solid var(--color-border)',
+          }}
+        >
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <div className="text-sm font-medium leading-none" style={{ color: 'var(--color-text)' }}>
+                {user?.name}
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                {user?.email}
+              </div>
+            </div>
             <button
               onClick={logout}
-              className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-danger transition-colors duration-200 cursor-pointer ml-2"
+              className="flex items-center gap-1.5 text-xs cursor-pointer px-3 py-1.5 rounded-md transition-colors"
+              style={{ color: 'var(--color-text-secondary)', backgroundColor: 'transparent' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = 'var(--color-danger)';
+                e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-3.5 w-3.5" />
               Logout
             </button>
           </div>

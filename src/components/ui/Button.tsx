@@ -9,17 +9,17 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<Variant, CSSProperties> = {
-  primary: { backgroundColor: 'var(--color-primary)', color: '#fff' },
-  secondary: { backgroundColor: '#fff', color: 'var(--color-text)', border: '1px solid var(--color-border)' },
-  danger: { backgroundColor: 'var(--color-danger)', color: '#fff' },
-  ghost: { backgroundColor: 'transparent', color: 'var(--color-text-secondary)' },
+  primary:   { backgroundColor: 'var(--color-primary)', color: '#fff' },
+  secondary: { backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)' },
+  danger:    { backgroundColor: 'var(--color-danger)', color: '#fff' },
+  ghost:     { backgroundColor: 'transparent', color: 'var(--color-text-secondary)' },
 };
 
 const hoverMap: Record<Variant, string> = {
-  primary: 'hover:opacity-90',
-  secondary: 'hover:bg-gray-50',
-  danger: 'hover:opacity-90',
-  ghost: 'hover:bg-gray-100',
+  primary:   'hover:opacity-90',
+  secondary: 'hover:opacity-80',
+  danger:    'hover:opacity-90',
+  ghost:     'hover:opacity-80',
 };
 
 export default function Button({
