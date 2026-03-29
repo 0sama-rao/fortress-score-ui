@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, RefreshCw, Shield, History } from 'lucide-react';
-import { getOrganizations, triggerScan, getOrgScans } from '../lib/services';
-import type { Organization, Scan } from '../lib/types';
+import { getOrganizations, triggerScan, getOrgScans, getOrgScore } from '../lib/services';
+import type { Organization, Scan, OrgScore } from '../lib/types';
 import { getScoreColor } from '../lib/types';
 import { useToast } from '../context/ToastContext';
 import Button from '../components/ui/Button';
@@ -16,7 +16,7 @@ export default function Dashboard() {
 
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
-  const [latestScan, setLatestScan] = useState<Scan | null>(null);
+  const [score, setScore] = useState<OrgScore | null>(null);
   const [recentScans, setRecentScans] = useState<Scan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScoreLoading, setIsScoreLoading] = useState(false);
@@ -32,21 +32,23 @@ export default function Dashboard() {
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Fetch latest completed scan when org changes
+  // Fetch score + recent scans when org changes
   useEffect(() => {
     if (!selectedOrg) return;
-    setLatestScan(null);
+    setScore(null);
     setRecentScans([]);
     setIsScoreLoading(true);
 
-    getOrgScans(selectedOrg.id)
-      .then((scans) => {
-        setRecentScans(scans.slice(0, 5));
-        const completed = scans.find((s) => s.status === 'COMPLETE' && s.fortressScore !== null);
-        setLatestScan(completed ?? null);
-      })
-      .catch(() => { /* no scans yet */ })
-      .finally(() => setIsScoreLoading(false));
+    const orgId = selectedOrg.id;
+
+    Promise.allSettled([
+      getOrgScore(orgId),
+      getOrgScans(orgId),
+    ]).then(([scoreResult, scansResult]) => {
+      if (scoreResult.status === 'fulfilled') setScore(scoreResult.value);
+      if (scansResult.status === 'fulfilled') setRecentScans(scansResult.value.slice(0, 5));
+      setIsScoreLoading(false);
+    });
   }, [selectedOrg]);
 
   async function handleScan() {
@@ -135,7 +137,7 @@ export default function Dashboard() {
           <SkeletonCard />
           <SkeletonCard />
         </div>
-      ) : latestScan ? (
+      ) : score && score.fortressScore !== null ? (
         <>
           {/* Fortress Score Hero + Category Breakdown */}
           <div
@@ -144,15 +146,15 @@ export default function Dashboard() {
           >
             <div className="flex items-center gap-10">
               {/* Score hero */}
-              <ScoreHero score={latestScan.fortressScore!} />
+              <ScoreHero score={score.fortressScore} />
 
               {/* 4 category cards */}
               <div className="flex-1 grid grid-cols-2 gap-3">
                 {([
-                  ['TLS Security',     latestScan.tlsScore,      '30%'],
-                  ['HTTP Headers',     latestScan.headersScore,   '30%'],
-                  ['Network Exposure', latestScan.networkScore,  '20%'],
-                  ['Email Security',   latestScan.emailScore,    '20%'],
+                  ['TLS Security',     score.breakdown.tls.score,     '30%'],
+                  ['HTTP Headers',     score.breakdown.headers.score, '30%'],
+                  ['Network Exposure', score.breakdown.network.score, '20%'],
+                  ['Email Security',   score.breakdown.email.score,   '20%'],
                 ] as [string, number | null, string][]).map(([label, val, weight]) => (
                   <div
                     key={label}
@@ -179,17 +181,25 @@ export default function Dashboard() {
             </div>
 
             {/* Last scanned */}
-            {latestScan.completedAt && (
+            {score.scannedAt && (
               <p className="text-xs mt-6 flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
                 <RefreshCw className="h-3 w-3" />
-                Last scanned {new Date(latestScan.completedAt).toLocaleString()}
+                Last scanned {new Date(score.scannedAt).toLocaleString()}
                 <span className="mx-1">·</span>
                 <button
-                  onClick={() => navigate(`/scans/${latestScan.id}`)}
+                  onClick={() => navigate(`/scans/${score.scanId}`)}
                   className="cursor-pointer underline transition-colors"
                   style={{ color: 'var(--color-primary)' }}
                 >
                   View full results
+                </button>
+                <span className="mx-1">·</span>
+                <button
+                  onClick={() => navigate(`/organizations/${score.organizationId}/history`)}
+                  className="cursor-pointer underline transition-colors"
+                  style={{ color: 'var(--color-primary)' }}
+                >
+                  Score history
                 </button>
               </p>
             )}

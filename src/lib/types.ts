@@ -58,21 +58,24 @@ export interface ScanResult {
 
 export interface OrgScore {
   organizationId: string;
-  fortressScore: number;
+  fortressScore: number | null;
   breakdown: {
-    tls:     { score: number; weight: number };
-    headers: { score: number; weight: number };
-    network: { score: number; weight: number };
-    email:   { score: number; weight: number };
+    tls:     { score: number | null; weight: number };
+    headers: { score: number | null; weight: number };
+    network: { score: number | null; weight: number };
+    email:   { score: number | null; weight: number };
   };
-  correlationBonus: number;
   scanId: string;
-  scannedAt: string;
+  scannedAt: string | null;
 }
 
 export interface ScoreHistoryEntry {
   scanId: string;
-  fortressScore: number;
+  fortressScore: number | null;
+  tlsScore: number | null;
+  headersScore: number | null;
+  networkScore: number | null;
+  emailScore: number | null;
   scannedAt: string;
 }
 
