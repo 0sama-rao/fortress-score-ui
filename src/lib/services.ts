@@ -3,7 +3,6 @@ import type {
   AuthResponse,
   Organization,
   Scan,
-  ScanResult,
   ScanResultsResponse,
   OrgScore,
   ScoreHistoryEntry,
