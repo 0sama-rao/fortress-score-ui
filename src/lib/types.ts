@@ -65,6 +65,7 @@ export interface OrgScore {
     network: { score: number | null; weight: number };
     email:   { score: number | null; weight: number };
   };
+  riskVelocity: number | null;
   scanId: string;
   scannedAt: string | null;
 }
@@ -76,7 +77,27 @@ export interface ScoreHistoryEntry {
   headersScore: number | null;
   networkScore: number | null;
   emailScore: number | null;
+  riskVelocity: number | null;
   scannedAt: string;
+}
+
+// ── Executive Summary ──
+
+export interface ExecutiveSummary {
+  company: string;
+  domain: string;
+  fortressScore: number;
+  posture: string;
+  keyIssues: string[];
+  recommendedFixes: string[];
+}
+
+export interface ScanResultsResponse {
+  scanId: string;
+  status: ScanStatus;
+  fortressScore: number | null;
+  executiveSummary?: ExecutiveSummary;
+  results: ScanResult[];
 }
 
 // ── Assets ──

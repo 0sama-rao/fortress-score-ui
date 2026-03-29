@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, RefreshCw, Shield, History } from 'lucide-react';
+import { Play, RefreshCw, Shield, History, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import { getOrganizations, triggerScan, getOrgScans, getOrgScore } from '../lib/services';
 import type { Organization, Scan, OrgScore } from '../lib/types';
 import { getScoreColor } from '../lib/types';
@@ -145,8 +145,32 @@ export default function Dashboard() {
             style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
           >
             <div className="flex items-center gap-10">
-              {/* Score hero */}
-              <ScoreHero score={score.fortressScore} />
+              {/* Score hero + velocity */}
+              <div className="flex flex-col items-center gap-2">
+                <ScoreHero score={score.fortressScore} />
+                {score.riskVelocity !== null && score.riskVelocity !== undefined && (
+                  <div
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                    style={{
+                      backgroundColor: score.riskVelocity < 0
+                        ? 'rgba(34,197,94,0.12)' : score.riskVelocity > 0
+                        ? 'rgba(239,68,68,0.12)' : 'rgba(148,163,184,0.12)',
+                      color: score.riskVelocity < 0
+                        ? '#22c55e' : score.riskVelocity > 0
+                        ? '#ef4444' : 'var(--color-text-muted)',
+                    }}
+                  >
+                    {score.riskVelocity < 0 ? (
+                      <TrendingDown className="h-3 w-3" />
+                    ) : score.riskVelocity > 0 ? (
+                      <TrendingUp className="h-3 w-3" />
+                    ) : (
+                      <Minus className="h-3 w-3" />
+                    )}
+                    {score.riskVelocity > 0 ? '+' : ''}{score.riskVelocity.toFixed(1)}/day
+                  </div>
+                )}
+              </div>
 
               {/* 4 category cards */}
               <div className="flex-1 grid grid-cols-2 gap-3">

@@ -16,6 +16,10 @@ const TLS_LABELS: Record<string, { label: string; severity: Finding['severity'] 
   weakProtocol:       { label: 'TLS 1.0/1.1 enabled',              severity: 'high'     },
   weakCipher:         { label: 'Weak cipher suites (RC4/DES/3DES)', severity: 'high'     },
   hostnameMismatch:   { label: 'Certificate hostname mismatch',     severity: 'high'     },
+  noHttpsRedirect:    { label: 'No HTTP→HTTPS redirect',            severity: 'high'     },
+  untrustedCA:        { label: 'Untrusted certificate authority',   severity: 'high'     },
+  weakSignature:      { label: 'Weak signature (MD2/MD5/SHA1)',     severity: 'high'     },
+  longValidity:       { label: 'Certificate validity >398 days',    severity: 'low'      },
   wildcardCert:       { label: 'Wildcard certificate in use',       severity: 'low'      },
 };
 
@@ -26,7 +30,9 @@ const HEADERS_LABELS: Record<string, { label: string; severity: Finding['severit
   missingCsp:                 { label: 'Missing Content-Security-Policy',    severity: 'high'   },
   missingXFrameOptions:       { label: 'Missing X-Frame-Options',           severity: 'medium' },
   missingXContentTypeOptions: { label: 'Missing X-Content-Type-Options',    severity: 'medium' },
+  missingXXssProtection:      { label: 'Missing X-XSS-Protection',         severity: 'medium' },
   weakHstsMaxAge:             { label: 'HSTS max-age below 6 months',      severity: 'medium' },
+  weakCspPolicy:              { label: 'Weak CSP (unsafe-inline/eval)',     severity: 'medium' },
   serverHeaderLeaksVersion:   { label: 'Server header leaks version info',  severity: 'low'    },
 };
 
@@ -36,17 +42,21 @@ const NETWORK_LABELS: Record<string, { label: string; severity: Finding['severit
   rdpExposed:     { label: 'RDP (3389) exposed to internet', severity: 'critical' },
   telnetOpen:     { label: 'Telnet (23) open',               severity: 'critical' },
   dbPortsExposed: { label: 'Database ports exposed',         severity: 'critical' },
+  smbExposed:     { label: 'SMB (445) exposed',              severity: 'critical' },
+  ftpOpen:        { label: 'FTP (21) open',                  severity: 'high'     },
   sshExposed:     { label: 'SSH (22) exposed',               severity: 'high'     },
 };
 
 // ── Email signal labels ──
 
 const EMAIL_LABELS: Record<string, { label: string; severity: Finding['severity'] }> = {
-  spfMissing:      { label: 'No SPF record',                            severity: 'high'   },
-  spfPermissive:   { label: 'SPF allows all senders (+all)',            severity: 'critical'},
-  dkimMissing:     { label: 'No DKIM record found',                    severity: 'high'    },
-  dmarcMissing:    { label: 'No DMARC policy',                         severity: 'high'    },
-  dmarcPolicyNone: { label: 'DMARC policy set to none (not enforced)', severity: 'medium'  },
+  spfMissing:         { label: 'No SPF record',                            severity: 'high'    },
+  spfPermissive:      { label: 'SPF allows all senders (+all)',            severity: 'critical' },
+  dkimMissing:        { label: 'No DKIM record found',                    severity: 'high'     },
+  dkimWeakKey:        { label: 'DKIM key size below 2048 bits',           severity: 'medium'   },
+  dmarcMissing:       { label: 'No DMARC policy',                         severity: 'high'     },
+  dmarcPolicyNone:    { label: 'DMARC policy set to none (not enforced)', severity: 'medium'   },
+  dmarcMisconfigured: { label: 'DMARC misconfigured',                     severity: 'medium'   },
 };
 
 const LABELS_BY_CATEGORY: Record<ScanCategory, Record<string, { label: string; severity: Finding['severity'] }>> = {
@@ -101,6 +111,15 @@ export function getSpecialSignals(category: ScanCategory, signals: SignalData): 
     if (typeof days === 'number' && days > 0 && days <= 30) {
       extras.push(`Certificate expires in ${days} days`);
     }
+    const keySize = signals.weakKeySize as string | null | undefined;
+    if (keySize && keySize !== 'null') {
+      const weak = ['rsa1024', 'dsa2048', 'ecc224'];
+      if (weak.includes(keySize)) {
+        extras.push(`Weak key: ${keySize.toUpperCase()}`);
+      } else {
+        extras.push(`Key: ${keySize.toUpperCase()}`);
+      }
+    }
   }
 
   if (category === 'NETWORK') {
@@ -111,6 +130,10 @@ export function getSpecialSignals(category: ScanCategory, signals: SignalData): 
     const critical = signals.criticalPortsOpen as number[] | undefined;
     if (Array.isArray(critical) && critical.length > 0) {
       extras.push(`Critical ports exposed: ${critical.join(', ')}`);
+    }
+    const factor = signals.exposureFactor as number | undefined;
+    if (typeof factor === 'number') {
+      extras.push(`Exposure factor: ${(factor * 100).toFixed(0)}%`);
     }
   }
 

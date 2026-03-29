@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Clock, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Clock, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight, ExternalLink, AlertTriangle, Wrench } from 'lucide-react';
 import { getScan, getScanResults } from '../lib/services';
-import type { Scan, ScanResult, ScanCategory } from '../lib/types';
+import type { Scan, ScanResult, ScanCategory, ExecutiveSummary } from '../lib/types';
 import { getScoreColor, getScoreLabel } from '../lib/types';
 import { parseSignals, getSpecialSignals, getSeverityColor, getSeverityBg } from '../lib/signals';
 import { ScoreHero } from '../components/ui/ScoreBadge';
@@ -40,6 +40,7 @@ export default function ScanResults() {
   const navigate = useNavigate();
   const [scan, setScan] = useState<Scan | null>(null);
   const [results, setResults] = useState<ScanResult[]>([]);
+  const [summary, setSummary] = useState<ExecutiveSummary | null>(null);
   const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -54,11 +55,12 @@ export default function ScanResults() {
         if (data.status === 'COMPLETE' || data.status === 'FAILED') {
           if (intervalRef.current) clearInterval(intervalRef.current);
           if (data.status === 'COMPLETE') {
-            const res = await getScanResults(id!);
-            setResults(res);
+            const resp = await getScanResults(id!);
+            setResults(resp.results);
+            if (resp.executiveSummary) setSummary(resp.executiveSummary);
             // Auto-expand first asset
-            if (res.length > 0) {
-              setExpandedAsset((prev) => prev ?? res[0].assetValue);
+            if (resp.results.length > 0) {
+              setExpandedAsset((prev) => prev ?? resp.results[0].assetValue);
             }
           }
         }
@@ -189,6 +191,81 @@ export default function ScanResults() {
               Scan failed. This can happen with invalid or unreachable domains. Try again with a real public domain.
             </div>
           ) : null}
+        </div>
+      )}
+
+      {/* Executive Summary */}
+      {summary && (
+        <div
+          className="rounded-xl overflow-hidden"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          {/* Posture badge header */}
+          <div
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid var(--color-border)' }}
+          >
+            <div>
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                Executive Summary
+              </h2>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                {summary.company} — {summary.domain}
+              </p>
+            </div>
+            <span
+              className="text-xs font-semibold px-3 py-1 rounded-full"
+              style={{
+                backgroundColor: `${getScoreColor(summary.fortressScore)}20`,
+                color: getScoreColor(summary.fortressScore),
+              }}
+            >
+              {summary.posture}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-px" style={{ backgroundColor: 'var(--color-border)' }}>
+            {/* Key Issues */}
+            <div className="px-6 py-4" style={{ backgroundColor: 'var(--color-surface)' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle className="h-4 w-4" style={{ color: '#f97316' }} />
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-secondary)' }}>
+                  Key Issues
+                </span>
+              </div>
+              <ul className="space-y-2">
+                {summary.keyIssues.map((issue, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    <span className="mt-0.5 h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: '#f97316' }} />
+                    {issue}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Recommended Fixes */}
+            <div className="px-6 py-4" style={{ backgroundColor: 'var(--color-surface)' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Wrench className="h-4 w-4" style={{ color: '#22c55e' }} />
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-secondary)' }}>
+                  Recommended Fixes
+                </span>
+              </div>
+              <ol className="space-y-2">
+                {summary.recommendedFixes.map((fix, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    <span
+                      className="mt-0.5 shrink-0 h-4 w-4 rounded-full flex items-center justify-center text-[9px] font-bold"
+                      style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: '#22c55e' }}
+                    >
+                      {i + 1}
+                    </span>
+                    {fix}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
         </div>
       )}
 

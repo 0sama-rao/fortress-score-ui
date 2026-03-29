@@ -96,12 +96,15 @@ export default function ScoreHistory() {
     emailScore: h.emailScore,
   }));
 
-  // Trend: compare last two entries
+  // Use riskVelocity from latest entry if available, else compute from last two
+  const latestVelocity = history.length > 0 ? history[history.length - 1].riskVelocity : null;
   const trend =
-    history.length >= 2
-      ? (history[history.length - 1].fortressScore ?? 0) -
-        (history[history.length - 2].fortressScore ?? 0)
-      : null;
+    latestVelocity !== null && latestVelocity !== undefined
+      ? latestVelocity
+      : history.length >= 2
+        ? (history[history.length - 1].fortressScore ?? 0) -
+          (history[history.length - 2].fortressScore ?? 0)
+        : null;
 
   return (
     <div className="space-y-6">
@@ -150,10 +153,10 @@ export default function ScoreHistory() {
               ) : null}
               <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
                 {trend < 0
-                  ? `Score improved by ${Math.abs(trend)} points since last scan`
+                  ? `Risk improving — ${Math.abs(trend).toFixed(1)} pts${latestVelocity !== null ? '/day' : ' since last scan'}`
                   : trend > 0
-                    ? `Score increased by ${trend} points since last scan`
-                    : 'Score unchanged since last scan'}
+                    ? `Risk increasing — ${trend.toFixed(1)} pts${latestVelocity !== null ? '/day' : ' since last scan'}`
+                    : 'Risk velocity stable'}
               </span>
               {trend !== 0 && (
                 <span
@@ -163,7 +166,7 @@ export default function ScoreHistory() {
                     color: trend < 0 ? '#22c55e' : '#ef4444',
                   }}
                 >
-                  {trend > 0 ? '+' : ''}{trend}
+                  {trend > 0 ? '+' : ''}{trend.toFixed(1)}
                 </span>
               )}
             </div>
@@ -248,11 +251,12 @@ export default function ScoreHistory() {
             style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
           >
             <div
-              className="grid grid-cols-6 px-5 py-3 text-xs font-semibold uppercase tracking-wider"
+              className="grid grid-cols-7 px-5 py-3 text-xs font-semibold uppercase tracking-wider"
               style={{ color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}
             >
               <span>Date</span>
               <span>Fortress</span>
+              <span>Velocity</span>
               <span>TLS</span>
               <span>Headers</span>
               <span>Network</span>
@@ -261,7 +265,7 @@ export default function ScoreHistory() {
             {[...history].reverse().map((entry) => (
               <div
                 key={entry.scanId}
-                className="grid grid-cols-6 px-5 py-3 items-center cursor-pointer transition-colors"
+                className="grid grid-cols-7 px-5 py-3 items-center cursor-pointer transition-colors"
                 style={{ borderBottom: '1px solid var(--color-border-subtle)' }}
                 onClick={() => navigate(`/scans/${entry.scanId}`)}
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-surface-2)')}
@@ -272,6 +276,20 @@ export default function ScoreHistory() {
                 </span>
                 <span className="text-sm font-bold" style={{ color: entry.fortressScore !== null ? getScoreColor(entry.fortressScore) : 'var(--color-text-muted)' }}>
                   {entry.fortressScore ?? '—'}
+                </span>
+                <span
+                  className="text-xs font-medium"
+                  style={{
+                    color: entry.riskVelocity === null || entry.riskVelocity === undefined
+                      ? 'var(--color-text-muted)'
+                      : entry.riskVelocity < 0 ? '#22c55e'
+                      : entry.riskVelocity > 0 ? '#ef4444'
+                      : 'var(--color-text-muted)',
+                  }}
+                >
+                  {entry.riskVelocity !== null && entry.riskVelocity !== undefined
+                    ? `${entry.riskVelocity > 0 ? '+' : ''}${entry.riskVelocity.toFixed(1)}`
+                    : '—'}
                 </span>
                 <span className="text-xs" style={{ color: entry.tlsScore !== null ? getScoreColor(entry.tlsScore) : 'var(--color-text-muted)' }}>
                   {entry.tlsScore ?? '—'}

@@ -4,6 +4,7 @@ import type {
   Organization,
   Scan,
   ScanResult,
+  ScanResultsResponse,
   OrgScore,
   ScoreHistoryEntry,
   Asset,
@@ -49,9 +50,9 @@ export async function getScan(scanId: string): Promise<Scan> {
   return data;
 }
 
-export async function getScanResults(scanId: string): Promise<ScanResult[]> {
-  const { data } = await api.get<{ results: ScanResult[] }>(`/api/scans/${scanId}/results`);
-  return data.results;
+export async function getScanResults(scanId: string): Promise<ScanResultsResponse> {
+  const { data } = await api.get<ScanResultsResponse>(`/api/scans/${scanId}/results`);
+  return data;
 }
 
 export async function getOrgScans(orgId: string): Promise<Scan[]> {
