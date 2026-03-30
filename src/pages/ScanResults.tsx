@@ -89,7 +89,7 @@ export default function ScanResults() {
     }
 
     fetchScan();
-    intervalRef.current = setInterval(fetchScan, 10000); // 10s poll, not 3s
+    intervalRef.current = setInterval(fetchScan, 5000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [id]);
 

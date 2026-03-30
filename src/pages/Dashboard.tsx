@@ -99,7 +99,7 @@ export default function Dashboard() {
 
     // Check once immediately after a short delay
     const initialCheck = setTimeout(checkScan, 2000);
-    pollRef.current = setInterval(checkScan, 10000);
+    pollRef.current = setInterval(checkScan, 5000);
 
     return () => {
       clearTimeout(initialCheck);
