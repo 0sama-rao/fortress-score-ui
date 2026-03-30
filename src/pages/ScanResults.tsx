@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Clock, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight, ExternalLink, AlertTriangle, Wrench } from 'lucide-react';
+import { ArrowLeft, Clock, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight, ExternalLink, AlertTriangle, Wrench, Skull, Globe, Cloud, Bug, Server } from 'lucide-react';
 import { getScan, getScanResults } from '../lib/services';
-import type { Scan, ScanResult, ScanCategory, ExecutiveSummary } from '../lib/types';
+import type { Scan, ScanResult, ScanCategory, ExecutiveSummary, IntelligenceSignals, BusinessImpact } from '../lib/types';
 import { getScoreColor, getScoreLabel } from '../lib/types';
 import { parseSignals, getSpecialSignals, getSeverityColor, getSeverityBg } from '../lib/signals';
 import { ScoreHero } from '../components/ui/ScoreBadge';
@@ -17,6 +17,13 @@ const CATEGORY_LABELS: Record<ScanCategory, string> = {
 
 const CATEGORY_ORDER: ScanCategory[] = ['TLS', 'HEADERS', 'NETWORK', 'EMAIL'];
 
+const IMPACT_SEVERITY_COLORS: Record<string, { color: string; bg: string }> = {
+  CRITICAL: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+  HIGH:     { color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+  MEDIUM:   { color: '#eab308', bg: 'rgba(234,179,8,0.12)' },
+  LOW:      { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+};
+
 const STATUS_MESSAGES: Record<string, string> = {
   PENDING:  'Queued — starting asset discovery…',
   RUNNING:  'Discovering subdomains and scanning infrastructure…',
@@ -24,7 +31,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   FAILED:   'Scan failed',
 };
 
-// Group results by asset
+// Group scan results by asset
 function groupByAsset(results: ScanResult[]): Map<string, ScanResult[]> {
   const map = new Map<string, ScanResult[]>();
   for (const r of results) {
@@ -41,7 +48,10 @@ export default function ScanResults() {
   const [scan, setScan] = useState<Scan | null>(null);
   const [results, setResults] = useState<ScanResult[]>([]);
   const [summary, setSummary] = useState<ExecutiveSummary | null>(null);
+  const [intel, setIntel] = useState<IntelligenceSignals | null>(null);
+  const [impacts, setImpacts] = useState<BusinessImpact[]>([]);
   const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
+  const [expandedIntelSection, setExpandedIntelSection] = useState<string | null>('subdomainTakeover');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -52,17 +62,26 @@ export default function ScanResults() {
         const data = await getScan(id!);
         setScan(data);
 
-        if (data.status === 'COMPLETE' || data.status === 'FAILED') {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          if (data.status === 'COMPLETE') {
+        // Fetch results for COMPLETE, and also try for RUNNING (partial results)
+        if (data.status === 'COMPLETE' || data.status === 'RUNNING') {
+          try {
             const resp = await getScanResults(id!);
             setResults(resp.results);
             if (resp.executiveSummary) setSummary(resp.executiveSummary);
+            if (resp.intelligenceData) setIntel(resp.intelligenceData);
+            if (resp.businessImpactData) setImpacts(resp.businessImpactData);
+
             // Auto-expand first asset
             if (resp.results.length > 0) {
               setExpandedAsset((prev) => prev ?? resp.results[0].assetValue);
             }
+          } catch {
+            // Results not ready yet — that's fine for RUNNING
           }
+        }
+
+        if (data.status === 'COMPLETE' || data.status === 'FAILED') {
+          if (intervalRef.current) clearInterval(intervalRef.current);
         }
       } catch {
         if (intervalRef.current) clearInterval(intervalRef.current);
@@ -70,7 +89,7 @@ export default function ScanResults() {
     }
 
     fetchScan();
-    intervalRef.current = setInterval(fetchScan, 3000);
+    intervalRef.current = setInterval(fetchScan, 10000); // 10s poll, not 3s
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [id]);
 
@@ -194,6 +213,19 @@ export default function ScanResults() {
         </div>
       )}
 
+      {/* Partial results banner */}
+      {isLive && results.length > 0 && (
+        <div
+          className="rounded-xl px-5 py-4 flex items-center gap-3"
+          style={{ backgroundColor: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
+        >
+          <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--color-accent)' }} />
+          <span className="text-sm" style={{ color: 'var(--color-accent)' }}>
+            Scan in progress — partial results shown below. Page updates automatically.
+          </span>
+        </div>
+      )}
+
       {/* Executive Summary */}
       {summary && (
         <div
@@ -265,6 +297,346 @@ export default function ScanResults() {
                 ))}
               </ol>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Business Impact */}
+      {impacts.length > 0 && (
+        <div
+          className="rounded-xl overflow-hidden"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <div
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid var(--color-border)' }}
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" style={{ color: '#f97316' }} />
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                Business Impact Analysis
+              </h2>
+            </div>
+            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+              {impacts.filter(i => i.severity === 'CRITICAL').length} critical
+            </span>
+          </div>
+
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {impacts.map((imp, i) => {
+              const sc = IMPACT_SEVERITY_COLORS[imp.severity] ?? IMPACT_SEVERITY_COLORS.MEDIUM;
+              return (
+                <div
+                  key={i}
+                  className="rounded-lg px-4 py-3"
+                  style={{ backgroundColor: sc.bg, border: `1px solid ${sc.color}30` }}
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span
+                      className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded"
+                      style={{ backgroundColor: sc.bg, color: sc.color }}
+                    >
+                      {imp.severity}
+                    </span>
+                    <span className="text-[10px] uppercase font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                      {imp.category}
+                    </span>
+                  </div>
+                  <div className="text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                    {imp.finding}
+                  </div>
+                  <div className="text-xs leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
+                    {imp.impact}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Intelligence Panel */}
+      {intel && (
+        <div
+          className="rounded-xl overflow-hidden"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <div
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid var(--color-border)' }}
+          >
+            <div className="flex items-center gap-2">
+              <Bug className="h-4 w-4" style={{ color: 'var(--color-accent)' }} />
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                Threat Intelligence
+              </h2>
+            </div>
+          </div>
+
+          {/* Section tabs */}
+          <div className="flex gap-1 px-4 pt-3 pb-2 overflow-x-auto">
+            {([
+              { key: 'subdomainTakeover', label: 'Takeover Risks',  icon: Globe,  count: intel.subdomainTakeover?.filter(r => r.vulnerable).length ?? 0 },
+              { key: 'cloudExposure',     label: 'Cloud Exposure',  icon: Cloud,  count: intel.cloudExposure?.length ?? 0 },
+              { key: 'threatIntel',       label: 'Blocklists',      icon: AlertTriangle, count: intel.threatIntel?.filter(r => r.inDnsBlocklist).length ?? 0 },
+              { key: 'vulnIntel',         label: 'Known Vulns',     icon: Skull,  count: intel.vulnIntel?.totalKEVMatches ?? 0 },
+              { key: 'asnInfo',           label: 'Infrastructure',  icon: Server, count: Object.keys(intel.asnInfo ?? {}).length },
+            ] as const).map(({ key, label, icon: Icon, count }) => {
+              const active = expandedIntelSection === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setExpandedIntelSection(active ? null : key)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all whitespace-nowrap"
+                  style={{
+                    backgroundColor: active ? 'var(--color-surface-2)' : 'transparent',
+                    border: `1px solid ${active ? 'var(--color-border)' : 'transparent'}`,
+                    color: active ? 'var(--color-text)' : 'var(--color-text-muted)',
+                  }}
+                >
+                  <Icon className="h-3 w-3" />
+                  {label}
+                  {count > 0 && (
+                    <span
+                      className="text-[10px] font-bold px-1.5 rounded-full"
+                      style={{
+                        backgroundColor: count > 0 ? 'rgba(239,68,68,0.15)' : 'var(--color-surface-2)',
+                        color: count > 0 ? '#ef4444' : 'var(--color-text-muted)',
+                      }}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Section content */}
+          <div className="px-4 pb-4">
+            {/* Subdomain Takeover */}
+            {expandedIntelSection === 'subdomainTakeover' && (
+              <div className="space-y-2">
+                {(intel.subdomainTakeover ?? []).length === 0 ? (
+                  <div className="text-xs py-3" style={{ color: 'var(--color-text-muted)' }}>No subdomain takeover risks detected</div>
+                ) : (
+                  (intel.subdomainTakeover ?? []).map((t, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between rounded-lg px-4 py-3"
+                      style={{
+                        backgroundColor: t.vulnerable ? 'rgba(239,68,68,0.08)' : 'var(--color-background)',
+                        border: `1px solid ${t.vulnerable ? 'rgba(239,68,68,0.2)' : 'var(--color-border-subtle)'}`,
+                      }}
+                    >
+                      <div>
+                        <div className="text-sm font-mono" style={{ color: 'var(--color-text)' }}>{t.hostname}</div>
+                        {t.cname && (
+                          <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                            CNAME → {t.cname}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {t.service && (
+                          <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-secondary)' }}>
+                            {t.service}
+                          </span>
+                        )}
+                        {t.vulnerable ? (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                            Vulnerable
+                          </span>
+                        ) : (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+                            Safe
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Cloud Exposure */}
+            {expandedIntelSection === 'cloudExposure' && (
+              <div className="space-y-2">
+                {(intel.cloudExposure ?? []).length === 0 ? (
+                  <div className="text-xs py-3" style={{ color: 'var(--color-text-muted)' }}>No exposed cloud buckets detected</div>
+                ) : (
+                  (intel.cloudExposure ?? []).map((b, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between rounded-lg px-4 py-3"
+                      style={{
+                        backgroundColor: b.listable ? 'rgba(239,68,68,0.08)' : b.exposed ? 'rgba(249,115,22,0.08)' : 'var(--color-background)',
+                        border: `1px solid ${b.listable ? 'rgba(239,68,68,0.2)' : b.exposed ? 'rgba(249,115,22,0.2)' : 'var(--color-border-subtle)'}`,
+                      }}
+                    >
+                      <div>
+                        <div className="text-sm font-mono" style={{ color: 'var(--color-text)' }}>{b.url}</div>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                          Provider: {b.provider}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {b.listable ? (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                            Listable
+                          </span>
+                        ) : b.exposed ? (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(249,115,22,0.15)', color: '#f97316' }}>
+                            Exposed
+                          </span>
+                        ) : (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+                            Private
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Threat Intel / Blocklists */}
+            {expandedIntelSection === 'threatIntel' && (
+              <div className="space-y-2">
+                {(intel.threatIntel ?? []).length === 0 ? (
+                  <div className="text-xs py-3" style={{ color: 'var(--color-text-muted)' }}>No blocklist entries found</div>
+                ) : (
+                  (intel.threatIntel ?? []).map((t, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between rounded-lg px-4 py-3"
+                      style={{
+                        backgroundColor: t.inDnsBlocklist ? 'rgba(239,68,68,0.08)' : 'var(--color-background)',
+                        border: `1px solid ${t.inDnsBlocklist ? 'rgba(239,68,68,0.2)' : 'var(--color-border-subtle)'}`,
+                      }}
+                    >
+                      <div>
+                        <div className="text-sm font-mono" style={{ color: 'var(--color-text)' }}>{t.hostname}</div>
+                        {t.ip && (
+                          <div className="text-xs mt-0.5 font-mono" style={{ color: 'var(--color-text-muted)' }}>{t.ip}</div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        {t.inDnsBlocklist && t.blocklists.map((bl) => (
+                          <span key={bl} className="text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                            {bl}
+                          </span>
+                        ))}
+                        {t.reverseRecordMismatch && (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(249,115,22,0.15)', color: '#f97316' }}>
+                            Reverse DNS Mismatch
+                          </span>
+                        )}
+                        {!t.inDnsBlocklist && !t.reverseRecordMismatch && (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+                            Clean
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* KEV / Known Vulnerabilities */}
+            {expandedIntelSection === 'vulnIntel' && (
+              <div className="space-y-2">
+                {!intel.vulnIntel || intel.vulnIntel.totalKEVMatches === 0 ? (
+                  <div className="text-xs py-3" style={{ color: 'var(--color-text-muted)' }}>
+                    No known exploited vulnerabilities matched
+                    {intel.vulnIntel?.servicesChecked?.length > 0 && (
+                      <span> (checked: {intel.vulnIntel.servicesChecked.join(', ')})</span>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className="text-xs font-bold px-2 py-0.5 rounded"
+                        style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }}
+                      >
+                        {intel.vulnIntel.totalKEVMatches} CVE{intel.vulnIntel.totalKEVMatches !== 1 ? 's' : ''} matched
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        (CISA Known Exploited Vulnerabilities)
+                      </span>
+                    </div>
+                    {intel.vulnIntel.kevFindings.map((kev) => (
+                      <div
+                        key={kev.cveId}
+                        className="rounded-lg px-4 py-3"
+                        style={{
+                          backgroundColor: kev.ransomwareUse ? 'rgba(239,68,68,0.08)' : 'rgba(249,115,22,0.08)',
+                          border: `1px solid ${kev.ransomwareUse ? 'rgba(239,68,68,0.2)' : 'rgba(249,115,22,0.2)'}`,
+                        }}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-mono font-bold" style={{ color: '#ef4444' }}>{kev.cveId}</span>
+                          {kev.ransomwareUse && (
+                            <span className="flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(239,68,68,0.2)', color: '#ef4444' }}>
+                              <Skull className="h-3 w-3" /> Ransomware
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                          {kev.vendor} — {kev.product}
+                        </div>
+                        <div className="text-xs leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
+                          {kev.description}
+                        </div>
+                        <div className="flex gap-3 mt-2 text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                          <span>Added: {new Date(kev.dateAdded).toLocaleDateString()}</span>
+                          <span>Due: {new Date(kev.dueDate).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ASN / Infrastructure */}
+            {expandedIntelSection === 'asnInfo' && (
+              <div>
+                {Object.keys(intel.asnInfo ?? {}).length === 0 ? (
+                  <div className="text-xs py-3" style={{ color: 'var(--color-text-muted)' }}>No ASN data available</div>
+                ) : (
+                  <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border-subtle)' }}>
+                    {/* Table header */}
+                    <div
+                      className="grid grid-cols-5 px-4 py-2 text-[10px] font-semibold uppercase tracking-wider"
+                      style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-background)', borderBottom: '1px solid var(--color-border-subtle)' }}
+                    >
+                      <span>Hostname</span>
+                      <span>IP</span>
+                      <span>ASN</span>
+                      <span>ISP</span>
+                      <span>Country</span>
+                    </div>
+                    {Object.entries(intel.asnInfo ?? {}).map(([hostname, info]) => (
+                      <div
+                        key={hostname}
+                        className="grid grid-cols-5 px-4 py-2 text-xs"
+                        style={{ borderBottom: '1px solid var(--color-border-subtle)' }}
+                      >
+                        <span className="font-mono" style={{ color: 'var(--color-text)' }}>{hostname}</span>
+                        <span className="font-mono" style={{ color: 'var(--color-text-secondary)' }}>{info.ip}</span>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>{info.asn}</span>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>{info.isp}</span>
+                        <span style={{ color: 'var(--color-text-muted)' }}>{info.country}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

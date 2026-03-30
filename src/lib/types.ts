@@ -54,7 +54,79 @@ export interface ScanResult {
   scannedAt: string;
 }
 
+// ── Intelligence ──
+
+export interface TakeoverResult {
+  hostname: string;
+  vulnerable: boolean;
+  cname: string | null;
+  service: string | null;
+}
+
+export interface CloudBucketResult {
+  url: string;
+  provider: string;
+  exposed: boolean;
+  listable: boolean;
+}
+
+export interface ThreatIntelResult {
+  hostname: string;
+  ip: string | null;
+  inDnsBlocklist: boolean;
+  blocklists: string[];
+  reverseRecordMismatch: boolean;
+}
+
+export interface KEVFinding {
+  cveId: string;
+  vendor: string;
+  product: string;
+  description: string;
+  dateAdded: string;
+  dueDate: string;
+  ransomwareUse: boolean;
+}
+
+export interface VulnIntelResult {
+  totalKEVMatches: number;
+  kevFindings: KEVFinding[];
+  servicesChecked: string[];
+}
+
+export interface ASNInfo {
+  ip: string;
+  asn: string;
+  org: string;
+  isp: string;
+  country: string;
+}
+
+export interface IntelligenceSignals {
+  subdomainTakeover: TakeoverResult[];
+  cloudExposure: CloudBucketResult[];
+  threatIntel: ThreatIntelResult[];
+  vulnIntel: VulnIntelResult;
+  asnInfo: Record<string, ASNInfo>;
+}
+
+export interface BusinessImpact {
+  finding: string;
+  impact: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  category: string;
+}
+
 // ── Score ──
+
+export interface IntelSummary {
+  takeoverRisks: number;
+  exposedBuckets: number;
+  blocklistedIPs: number;
+  kevMatches: number;
+  criticalImpacts: number;
+  highImpacts: number;
+}
 
 export interface OrgScore {
   organizationId: string;
@@ -66,6 +138,7 @@ export interface OrgScore {
     email:   { score: number | null; weight: number };
   };
   riskVelocity: number | null;
+  intelSummary?: IntelSummary;
   scanId: string;
   scannedAt: string | null;
 }
@@ -97,6 +170,8 @@ export interface ScanResultsResponse {
   status: ScanStatus;
   fortressScore: number | null;
   executiveSummary?: ExecutiveSummary;
+  intelligenceData?: IntelligenceSignals;
+  businessImpactData?: BusinessImpact[];
   results: ScanResult[];
 }
 

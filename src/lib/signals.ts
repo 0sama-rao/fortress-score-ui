@@ -43,8 +43,9 @@ const NETWORK_LABELS: Record<string, { label: string; severity: Finding['severit
   telnetOpen:     { label: 'Telnet (23) open',               severity: 'critical' },
   dbPortsExposed: { label: 'Database ports exposed',         severity: 'critical' },
   smbExposed:     { label: 'SMB (445) exposed',              severity: 'critical' },
-  ftpOpen:        { label: 'FTP (21) open',                  severity: 'high'     },
-  sshExposed:     { label: 'SSH (22) exposed',               severity: 'high'     },
+  ftpOpen:          { label: 'FTP (21) open',                    severity: 'high'     },
+  sshExposed:       { label: 'SSH (22) exposed',                 severity: 'high'     },
+  multipleWebPorts: { label: 'Multiple web ports open (80/443/8080/8443)', severity: 'medium' },
 };
 
 // ── Email signal labels ──

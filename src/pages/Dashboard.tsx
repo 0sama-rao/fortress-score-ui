@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, RefreshCw, Shield, History, TrendingDown, TrendingUp, Minus } from 'lucide-react';
-import { getOrganizations, triggerScan, getOrgScans, getOrgScore } from '../lib/services';
+import { Play, RefreshCw, Shield, History, TrendingDown, TrendingUp, Minus, Globe, Cloud, AlertTriangle, Skull, Bug, Loader2 } from 'lucide-react';
+import { getOrganizations, triggerScan, getOrgScans, getOrgScore, getScan } from '../lib/services';
 import type { Organization, Scan, OrgScore } from '../lib/types';
 import { getScoreColor } from '../lib/types';
 import { useToast } from '../context/ToastContext';
@@ -21,6 +21,8 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isScoreLoading, setIsScoreLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [activeScanId, setActiveScanId] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     getOrganizations()
@@ -32,11 +34,25 @@ export default function Dashboard() {
       .finally(() => setIsLoading(false));
   }, []);
 
+  // Refresh score + scans for current org
+  const refreshData = useCallback(() => {
+    if (!selectedOrg) return;
+    const orgId = selectedOrg.id;
+    Promise.allSettled([
+      getOrgScore(orgId),
+      getOrgScans(orgId),
+    ]).then(([scoreResult, scansResult]) => {
+      if (scoreResult.status === 'fulfilled') setScore(scoreResult.value);
+      if (scansResult.status === 'fulfilled') setRecentScans(scansResult.value.slice(0, 5));
+    });
+  }, [selectedOrg]);
+
   // Fetch score + recent scans when org changes
   useEffect(() => {
     if (!selectedOrg) return;
     setScore(null);
     setRecentScans([]);
+    setActiveScanId(null);
     setIsScoreLoading(true);
 
     const orgId = selectedOrg.id;
@@ -46,18 +62,61 @@ export default function Dashboard() {
       getOrgScans(orgId),
     ]).then(([scoreResult, scansResult]) => {
       if (scoreResult.status === 'fulfilled') setScore(scoreResult.value);
-      if (scansResult.status === 'fulfilled') setRecentScans(scansResult.value.slice(0, 5));
+      if (scansResult.status === 'fulfilled') {
+        const scans = scansResult.value;
+        setRecentScans(scans.slice(0, 5));
+        // Auto-detect any running scan for this org
+        const running = scans.find((s) => s.status === 'PENDING' || s.status === 'RUNNING');
+        if (running) setActiveScanId(running.id);
+      }
       setIsScoreLoading(false);
     });
   }, [selectedOrg]);
+
+  // Background poll active scan every 10s
+  useEffect(() => {
+    if (!activeScanId) {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      return;
+    }
+
+    async function checkScan() {
+      try {
+        const scan = await getScan(activeScanId!);
+        if (scan.status === 'COMPLETE') {
+          setActiveScanId(null);
+          toast.success(`Scan complete — Fortress Score: ${scan.fortressScore ?? '—'}`);
+          refreshData();
+        } else if (scan.status === 'FAILED') {
+          setActiveScanId(null);
+          toast.error('Scan failed — try again with a valid public domain');
+          refreshData();
+        }
+      } catch {
+        // silently ignore poll errors
+      }
+    }
+
+    // Check once immediately after a short delay
+    const initialCheck = setTimeout(checkScan, 2000);
+    pollRef.current = setInterval(checkScan, 10000);
+
+    return () => {
+      clearTimeout(initialCheck);
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    };
+  }, [activeScanId, refreshData]);
 
   async function handleScan() {
     if (!selectedOrg) return;
     setIsScanning(true);
     try {
       const scan = await triggerScan(selectedOrg.id);
-      toast.info('Scan started — discovering assets…');
-      navigate(`/scans/${scan.id}`);
+      setActiveScanId(scan.id);
+      setIsScanning(false);
+      toast.info('Scan queued — results will appear when ready');
+      // Add to recent scans list immediately
+      setRecentScans((prev) => [scan, ...prev].slice(0, 5));
     } catch (err: unknown) {
       if (
         err && typeof err === 'object' && 'response' in err &&
@@ -65,7 +124,7 @@ export default function Dashboard() {
       ) {
         const scanId = (err as { response: { data: { scanId?: string } } }).response.data.scanId;
         toast.warning('A scan is already running for this organization');
-        if (scanId) navigate(`/scans/${scanId}`);
+        if (scanId) setActiveScanId(scanId);
       } else {
         toast.error('Failed to start scan');
       }
@@ -125,12 +184,46 @@ export default function Dashboard() {
               ))}
             </select>
           )}
-          <Button onClick={handleScan} isLoading={isScanning}>
-            <Play className="h-4 w-4 mr-1.5" />
-            Run Scan
+          <Button onClick={handleScan} isLoading={isScanning} disabled={!!activeScanId}>
+            {activeScanId ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                Scanning…
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4 mr-1.5" />
+                Run Scan
+              </>
+            )}
           </Button>
         </div>
       </div>
+
+      {/* Active scan banner */}
+      {activeScanId && (
+        <div
+          className="rounded-xl px-5 py-4 flex items-center gap-3"
+          style={{ backgroundColor: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
+        >
+          <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--color-accent)' }} />
+          <div className="flex-1">
+            <span className="text-sm font-medium" style={{ color: 'var(--color-accent)' }}>
+              Scan in progress
+            </span>
+            <span className="text-xs ml-2" style={{ color: 'var(--color-text-muted)' }}>
+              This may take 1–3 minutes. Results will appear automatically.
+            </span>
+          </div>
+          <button
+            onClick={() => navigate(`/scans/${activeScanId}`)}
+            className="text-xs cursor-pointer underline"
+            style={{ color: 'var(--color-accent)' }}
+          >
+            View progress
+          </button>
+        </div>
+      )}
 
       {isScoreLoading ? (
         <div className="grid grid-cols-2 gap-4">
@@ -228,6 +321,48 @@ export default function Dashboard() {
               </p>
             )}
           </div>
+
+          {/* Intel Summary Cards */}
+          {score.intelSummary && (
+            <div
+              className="rounded-xl p-5"
+              style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <Bug className="h-3.5 w-3.5" style={{ color: 'var(--color-accent)' }} />
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-secondary)' }}>
+                  Threat Intelligence
+                </span>
+              </div>
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                {([
+                  { label: 'Takeover Risks',   value: score.intelSummary.takeoverRisks,   icon: Globe,          color: '#ef4444' },
+                  { label: 'Exposed Buckets',   value: score.intelSummary.exposedBuckets,  icon: Cloud,          color: '#f97316' },
+                  { label: 'Blocklisted IPs',   value: score.intelSummary.blocklistedIPs,  icon: AlertTriangle,  color: '#eab308' },
+                  { label: 'Known Vulns (KEV)', value: score.intelSummary.kevMatches,       icon: Skull,          color: '#ef4444' },
+                  { label: 'Critical Impacts',  value: score.intelSummary.criticalImpacts, icon: AlertTriangle,  color: '#ef4444' },
+                  { label: 'High Impacts',      value: score.intelSummary.highImpacts,     icon: AlertTriangle,  color: '#f97316' },
+                ] as const).map(({ label, value, icon: Icon, color }) => (
+                  <div
+                    key={label}
+                    className="rounded-lg px-3 py-3 text-center"
+                    style={{ backgroundColor: 'var(--color-background)' }}
+                  >
+                    <Icon className="h-4 w-4 mx-auto mb-1.5" style={{ color: value > 0 ? color : 'var(--color-text-muted)' }} />
+                    <div
+                      className="text-xl font-bold"
+                      style={{ color: value > 0 ? color : 'var(--color-text-muted)' }}
+                    >
+                      {value}
+                    </div>
+                    <div className="text-[10px] mt-1 leading-tight" style={{ color: 'var(--color-text-muted)' }}>
+                      {label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Score Scale */}
           <div
